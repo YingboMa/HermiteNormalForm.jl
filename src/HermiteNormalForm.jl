@@ -1,9 +1,37 @@
 module HermiteNormalForm
 
-"""
-    U, H = hnf(A)
+using LinearAlgebra
+export hnf!, hnf, ishnf
 
-`U` is unimodular and `H` is the Hermite normal form of A.
+"""
+    ishnf(A)
+
+Check if matrix `A` is in Hermite norm form.
+"""
+function ishnf(A)
+    m, n = size(A)
+    for j in 1:n
+        for i in 1:min(m, j-1)
+            A[i, j] == 0 || return false
+        end
+        if m >= j
+            A[j, j] > 0 || return false
+        end
+    end
+    for i in 1:min(m, n)
+        p = A[i, i]
+        for j in 1:min(n, i-1)
+            0 <= A[i, j] < p || return false
+        end
+    end
+    return true
+end
+
+"""
+    H, U = hnf(A)
+
+`U` is unimodular and `H` is the Hermite normal form of `A`. If `A` is singular,
+then it returns `nothing`.
 """
 hnf(A) = hnf!(copy(A))
 
@@ -14,7 +42,7 @@ function hnf!(A)
     zz = zero(T)
     for k in 1:m
         # Pivot: A[k, k] should not be 0
-        if A[k, k] == zz
+        if n >= k && A[k, k] == zz
             pivot = k
             for j in k+1:n
                 if A[k, j] != zz
@@ -49,6 +77,7 @@ function hnf!(A)
                 U[i, j] = -Uik * Akjd + Uij * Akkd
             end
         end
+        n >= k || continue
         # Ensure the positivity of A[k, k]
         if A[k, k] < zz
             @. A[:, k] = -A[:, k]
@@ -61,7 +90,7 @@ function hnf!(A)
             @. U[:, j] -= mul * U[:, k]
         end
     end
-    U, A
+    A, U
 end
 
 end
