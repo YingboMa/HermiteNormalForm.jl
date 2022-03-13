@@ -10,6 +10,7 @@ using Test
             H, U = F
             @test ishnf(H)
             @test abs(det(U.//1)) == 1
+            @test LinearAlgebra.issuccess(lu(Rational.(A)', check=false))
         else
             @test !LinearAlgebra.issuccess(lu(Rational.(A)', check=false))
         end
