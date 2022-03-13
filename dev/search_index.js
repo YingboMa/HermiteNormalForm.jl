@@ -1,0 +1,3 @@
+var documenterSearchIndex = {"docs":
+[{"location":"","page":"Home","title":"Home","text":"CurrentModule = HermiteNormalForm","category":"page"},{"location":"#HermiteNormalForm","page":"Home","title":"HermiteNormalForm","text":"","category":"section"},{"location":"","page":"Home","title":"Home","text":"Documentation for HermiteNormalForm.","category":"page"},{"location":"","page":"Home","title":"Home","text":"","category":"page"},{"location":"","page":"Home","title":"Home","text":"Modules = [HermiteNormalForm]","category":"page"},{"location":"#HermiteNormalForm.hnf-Tuple{Any}","page":"Home","title":"HermiteNormalForm.hnf","text":"U, H = hnf(A)\n\nU is unimodular and H is the Hermite normal form of A.\n\n\n\n\n\n","category":"method"}]
+}
