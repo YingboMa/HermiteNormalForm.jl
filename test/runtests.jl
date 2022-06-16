@@ -26,6 +26,7 @@ using Test
         @test abs(det(U.//1)) == 1
         @test iszero(A * N)
         _, _, rkn = hnf(N)
+        @test size(HermiteNormalForm.nullspace(N), 2) == 0
         @test rkn == min(size(N)...)
     end
 end
