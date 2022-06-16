@@ -70,8 +70,8 @@ function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) 
     rank = 0
     @inbounds for k in 1:m
         pivot = find_pivot(A, k, zz)
+        @info "" A k iszero(pivot)
         iszero(pivot) && continue # rank deficient
-        rank += 1
         if pivot != k
             for i in 1:m
                 A[i, k], A[i, pivot] = A[i, pivot], A[i, k]
@@ -100,6 +100,10 @@ function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) 
                 U[i, j] = -Uik * Akjd + Uij * Akkd
             end
         end
+
+        n >= k || continue
+        rank += 1
+
         if diagonalize
             # Zero out A[k, 1:k-1] === A21[1, 1:k-1] by doing
             # A[:, j] = A[:, [k j]] * [-A[k, j], A[k, k]]
@@ -121,7 +125,6 @@ function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) 
                 end
             end
         else
-            n >= k || continue
             # Ensure the positivity of A[k, k]
             if A[k, k] < zz
                 @. A[:, k] = -A[:, k]
