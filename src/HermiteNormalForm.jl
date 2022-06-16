@@ -112,7 +112,7 @@ function pivotCols!(A, K, i, M, piv)
     end
     return false
 end
-function zeroSupDiagonalCM!(A, b, rr, c)
+function zeroSupDiagonal!(A, b, rr, c)
     M, N = size(A)
     @inbounds for j = c+1:N
         Aii = A[rr, c]
@@ -136,7 +136,7 @@ function zeroSupDiagonalCM!(A, b, rr, c)
         end
     end
 end
-function zeroSubDiagonalCM!(A, b, rr, c)
+function zeroSubDiagonal!(A, b, rr, c)
     N = size(A, 1)
     @inbounds for j = 1:c-1
         Aic = A[rr, c]
@@ -159,9 +159,9 @@ function zeroSubDiagonalCM!(A, b, rr, c)
         end
     end
 end
-function simplifySystemCM!(E, q = nothing)
+function simplify!(E, q = nothing)
     M, N = size(E)
-    (N == 0) && return 0
+    (N == 0) && return
     dec = 0
     for m = 1:M
         if (m - dec > N)
@@ -171,28 +171,18 @@ function simplifySystemCM!(E, q = nothing)
             dec += 1
             continue
         end
-        zeroSupDiagonalCM!(E, q, m, m - dec)
-        zeroSubDiagonalCM!(E, q, m, m - dec)
-    end
-    Nnew = N
-    while (all(iszero, view(E, :, Nnew)))
-        Nnew -= 1
-    end
-    if q === nothing
-        return view(E, :, 1:Nnew)
-    else
-        return view(E, :, 1:Nnew), view(q, :, 1:Nnew)
+        zeroSupDiagonal!(E, q, m, m - dec)
+        zeroSubDiagonal!(E, q, m, m - dec)
     end
 end
 nullspace(A) = nullspace!(copy(A))
 function nullspace!(B)
-    # B = permutedims(A)
     M = size(B, 2)
     C = Matrix{Int}(undef, M, M)
     @inbounds for mc = 1:M, mr = 1:M
         C[mr, mc] = mc == mr
     end
-    simplifySystemCM!(B, C)
+    simplify!(B, C)
     Mnew = M
     while (Mnew > 0) && (all(iszero, view(B, :, Mnew)))
         Mnew -= 1
