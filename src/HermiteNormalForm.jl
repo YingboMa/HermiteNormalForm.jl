@@ -49,7 +49,7 @@ function nullspace(A)
     n = size(A, 2)
     U = Matrix{eltype(A)}(I, n, n)
     H, U, rank = _hnf_like!(copy(A), U, Val(true))
-    @view U[:, rank+1:end]
+    @view U[:, findall(iszero, eachcol(H))]
 end
 
 Base.@propagate_inbounds function find_pivot(A, k, zz = zero(eltype(A)))
@@ -70,7 +70,7 @@ function hnf!(A, ::Val{with_transformation}) where with_transformation
     n = size(A, 2)
     _hnf_like!(A, with_transformation ? Matrix{eltype(A)}(I, n, n) : nothing)
 end
-function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) where {diagonalize}
+function _hnf_like!(A, U = Matrix{eltype(A)}(I, size(A, 2), size(A, 2)), ::Val{diagonalize} = Val(false)) where {diagonalize}
     Base.require_one_based_indexing(A)
     m, n = size(A)
     minmn = min(m, n)
