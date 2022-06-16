@@ -9,20 +9,28 @@ export hnf!, hnf, ishnf
 Check if matrix `A` is in Hermite norm form.
 """
 function ishnf(A)
+    LinearAlgebra.istril(A) || return false
+
     m, n = size(A)
-    for j in 1:n
-        for i in 1:min(m, j-1)
-            A[i, j] == 0 || return false
+    k = 1
+    while k <= min(m, n)
+        pivot = find_pivot(A, k)
+        if iszero(pivot)
+            ki = findfirst(!iszero, @view A[k+1:end, k])
+            if ki === nothing
+                k = k + 1
+                continue
+            end
+            ki += k
+        else
+            ki = k
         end
-        if m >= j
-            A[j, j] > 0 || return false
+
+        p = A[ki, k]
+        for j in 1:k-1
+            0 <= A[ki, j] < p || return false
         end
-    end
-    for i in 1:min(m, n)
-        p = A[i, i]
-        for j in 1:min(n, i-1)
-            0 <= A[i, j] < p || return false
-        end
+        k = ki + 1
     end
     return true
 end
@@ -65,6 +73,7 @@ end
 function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) where {diagonalize}
     Base.require_one_based_indexing(A)
     m, n = size(A)
+    minmn = min(m, n)
     T = eltype(A)
     zz = zero(T)
     rank = 0
@@ -72,26 +81,29 @@ function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) 
         pivot = find_pivot(A, k, zz)
         has_subdiag = n >= k
         if iszero(pivot) # rank deficient
-            rank += any(!iszero, @view A[k+1:end, k])
-            continue
+            ki = findfirst(!iszero, @view A[k+1:end, k])
+            ki === nothing && continue
+            ki += k
+        else
+            ki = k
+            if pivot != k
+                for i in 1:m
+                    A[i, k], A[i, pivot] = A[i, pivot], A[i, k]
+                end
+                U === nothing || for i in 1:n
+                    U[i, k], U[i, pivot] = U[i, pivot], U[i, k]
+                end
+            end
         end
-        rank += has_subdiag
+        rank += k <= minmn
 
-        if pivot != k
-            for i in 1:m
-                A[i, k], A[i, pivot] = A[i, pivot], A[i, k]
-            end
-            U === nothing || for i in 1:n
-                U[i, k], U[i, pivot] = U[i, pivot], U[i, k]
-            end
-        end
         # [A11   0 ] k-1 rows
         # [A21  A22]
         # Zero out A[k, k+1:n] === A22[1, 2:end] by multiplying
         # [p  -A[k, j]/d]
         # [q   A[k, k]/d]
         for j in k+1:n
-            Akk, Akj = A[k, k], A[k, j]
+            Akk, Akj = A[ki, k], A[ki, j]
             d, p, q = gcdx(Akk, Akj)
             Akkd, Akjd = div(Akk, d), div(Akj, d)
             for i in 1:m
@@ -116,7 +128,7 @@ function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) 
             #   A[k, j] = A[k, [k j]] * [-A[k, j], A[k, k]]
             # = A[k, k] * -A[k, j] + A[k, j] * A[k, k] = 0
             for j in 1:k-1
-                Akk, Akj = A[k, k], A[k, j]
+                Akk, Akj = A[ki, k], A[ki, j]
                 d = gcd(Akk, Akj)
                 Akkd, Akjd = div(Akk, d), div(Akj, d)
                 for i in 1:m
@@ -130,13 +142,13 @@ function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) 
             end
         else
             # Ensure the positivity of A[k, k]
-            if A[k, k] < zz
+            if A[ki, k] < zz
                 @. A[:, k] = -A[:, k]
                 U === nothing || @. U[:, k] = -U[:, k]
             end
             # Minimize A[k, 1:k-1] === A21[1, :]
             for j in 1:k-1
-                mul = fld(A[k, j], A[k, k])
+                mul = fld(A[ki, j], A[ki, k])
                 @. A[:, j] -= mul * A[:, k]
                 U === nothing || @. U[:, j] -= mul * U[:, k]
             end
