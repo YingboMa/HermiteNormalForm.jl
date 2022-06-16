@@ -17,16 +17,24 @@ using Test
         -2   3  -2
        ]
     @test !ishnf(H2)
-    for m in 1:20, n in 1:20
+    for m in 1:20, n in 1:20, _ in 1:10
         A = rand(-big(3):3, m, n)
         H, U, rk = hnf(A)
         N = HermiteNormalForm.nullspace(A)
-        @test size(N, 2) == n - rk
-        @test ishnf(H)
-        @test abs(det(U.//1)) == 1
-        @test iszero(A * N)
+        tests = []
+        push!(tests, @test size(N, 2) == n - rk)
+        push!(tests, @test ishnf(H))
+        push!(tests, @test abs(det(U.//1)) == 1)
+        push!(tests, @test iszero(A * N))
         _, _, rkn = hnf(N)
-        @test size(HermiteNormalForm.nullspace(N), 2) == 0
-        @test rkn == min(size(N)...)
+        push!(tests, @test size(HermiteNormalForm.nullspace(N), 2) == 0)
+        push!(tests, @test rkn == min(size(N)...))
+
+        # t.value could be a string
+        idxs = findall(t -> t.value != true, tests)
+        if !isempty(idxs)
+            println("Failed tests: ", idxs)
+            println("A = ", A)
+        end
     end
 end
