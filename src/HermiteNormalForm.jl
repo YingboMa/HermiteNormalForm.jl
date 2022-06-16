@@ -70,8 +70,13 @@ function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) 
     rank = 0
     @inbounds for k in 1:m
         pivot = find_pivot(A, k, zz)
-        @info "" A k iszero(pivot)
-        iszero(pivot) && continue # rank deficient
+        has_subdiag = n >= k
+        if iszero(pivot) # rank deficient
+            rank += any(!iszero, @view A[k+1:end, k])
+            continue
+        end
+        rank += has_subdiag
+
         if pivot != k
             for i in 1:m
                 A[i, k], A[i, pivot] = A[i, pivot], A[i, k]
@@ -101,8 +106,7 @@ function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) 
             end
         end
 
-        n >= k || continue
-        rank += 1
+        has_subdiag || continue
 
         if diagonalize
             # Zero out A[k, 1:k-1] === A21[1, 1:k-1] by doing
