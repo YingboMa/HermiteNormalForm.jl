@@ -28,32 +28,55 @@ function ishnf(A)
 end
 
 """
-    H, U = hnf(A)
+    H, U, rank = hnf(A)
 
-`U` is unimodular and `H` is the Hermite normal form of `A`. If `A` is singular,
-then it returns `nothing`.
+`U` is unimodular. `H` is the Hermite normal form of `A`. `rank` is the rank of
+`A`.
+
+    H, rank = hnf(A, Val(false))
 """
-hnf(A) = hnf!(copy(A))
+hnf(A, with_transformation = Val(true)) = hnf!(copy(A), with_transformation)
 
-function hnf!(A)
+function nullspace(A)
+    n = size(A, 2)
+    U = Matrix{eltype(A)}(I, n, n)
+    H, U, rank = _hnf_like!(copy(A), U, Val(true))
+    @view U[:, rank+1:end]
+end
+
+Base.@propagate_inbounds function find_pivot(A, k, zz = zero(eltype(A)))
+    n = size(A, 2)
+    pivot = k
+    if n >= k && A[k, k] == zz
+        for j in k+1:n
+            if A[k, j] != zz
+                pivot = j
+            end
+        end
+        pivot == k && (pivot = zero(pivot)) # rank deficient
+    end
+    return pivot
+end
+
+function hnf!(A, ::Val{with_transformation}) where with_transformation
+    n = size(A, 2)
+    _hnf_like!(A, with_transformation ? Matrix{eltype(A)}(I, n, n) : nothing)
+end
+function _hnf_like!(A, U = Matrix{T}(I, n, n), ::Val{diagonalize} = Val(false)) where {diagonalize}
+    Base.require_one_based_indexing(A)
     m, n = size(A)
     T = eltype(A)
-    U = Matrix{T}(I, n, n)
     zz = zero(T)
-    for k in 1:m
-        # Pivot: A[k, k] should not be 0
-        if n >= k && A[k, k] == zz
-            pivot = k
-            for j in k+1:n
-                if A[k, j] != zz
-                    pivot = j
-                end
-            end
-            pivot == k && return nothing # rank deficient
+    rank = 0
+    @inbounds for k in 1:m
+        pivot = find_pivot(A, k, zz)
+        iszero(pivot) && continue # rank deficient
+        rank += 1
+        if pivot != k
             for i in 1:m
                 A[i, k], A[i, pivot] = A[i, pivot], A[i, k]
             end
-            for i in 1:n
+            U === nothing || for i in 1:n
                 U[i, k], U[i, pivot] = U[i, pivot], U[i, k]
             end
         end
@@ -71,26 +94,48 @@ function hnf!(A)
                 A[i, k] = Aik * p + Aij * q
                 A[i, j] = -Aik * Akjd + Aij * Akkd
             end
-            for i in 1:n
+            U === nothing || for i in 1:n
                 Uik, Uij = U[i, k], U[i, j]
                 U[i, k] = Uik * p + Uij * q
                 U[i, j] = -Uik * Akjd + Uij * Akkd
             end
         end
-        n >= k || continue
-        # Ensure the positivity of A[k, k]
-        if A[k, k] < zz
-            @. A[:, k] = -A[:, k]
-            @. U[:, k] = -U[:, k]
-        end
-        # Minimize A[k, 1:k-1] === A21[1, :]
-        for j in 1:k-1
-            mul = fld(A[k, j], A[k, k])
-            @. A[:, j] -= mul * A[:, k]
-            @. U[:, j] -= mul * U[:, k]
+        if diagonalize
+            # Zero out A[k, 1:k-1] === A21[1, 1:k-1] by doing
+            # A[:, j] = A[:, [k j]] * [-A[k, j], A[k, k]]
+            #
+            # Note that we then have:
+            #   A[k, j] = A[k, [k j]] * [-A[k, j], A[k, k]]
+            # = A[k, k] * -A[k, j] + A[k, j] * A[k, k] = 0
+            for j in 1:k-1
+                Akk, Akj = A[k, k], A[k, j]
+                d = gcd(Akk, Akj)
+                Akkd, Akjd = div(Akk, d), div(Akj, d)
+                for i in 1:m
+                    Aik, Aij = A[i, k], A[i, j]
+                    A[i, j] = -Aik * Akjd + Aij * Akkd
+                end
+                U === nothing || for i in 1:n
+                    Uik, Uij = U[i, k], U[i, j]
+                    U[i, j] = -Uik * Akjd + Uij * Akkd
+                end
+            end
+        else
+            n >= k || continue
+            # Ensure the positivity of A[k, k]
+            if A[k, k] < zz
+                @. A[:, k] = -A[:, k]
+                U === nothing || @. U[:, k] = -U[:, k]
+            end
+            # Minimize A[k, 1:k-1] === A21[1, :]
+            for j in 1:k-1
+                mul = fld(A[k, j], A[k, k])
+                @. A[:, j] -= mul * A[:, k]
+                U === nothing || @. U[:, j] -= mul * U[:, k]
+            end
         end
     end
-    A, U
+    A, U, rank
 end
 
 end
