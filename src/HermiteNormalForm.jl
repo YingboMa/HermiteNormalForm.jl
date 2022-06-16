@@ -93,7 +93,15 @@ function hnf!(A)
     A, U
 end
 
-function pivotCols!(A, K, i, M, piv)
+macro vp(expr)
+    nodes = (Symbol("llvm.loop.vectorize.predicate.enable"), 1)
+    if expr.head != :for
+        error("Syntax error: loopinfo needs a for loop")
+    end
+    push!(expr.args[2].args, Expr(:loopinfo, nodes))
+    return esc(expr)
+end
+@inline function pivotCols!(A, K, i, M, piv)
     j = piv
     @inbounds while (A[i, piv] == 0)
         if ((piv += 1) > M)
@@ -101,34 +109,41 @@ function pivotCols!(A, K, i, M, piv)
         end
     end
     @inbounds if (j != piv)
-        for k in axes(A, 1)
+        @vp for k in axes(A, 1)
             A[k, j], A[k, piv] = A[k, piv], A[k, j]
         end
         if K !== nothing
-            for k in axes(K, 1)
+            @vp for k in axes(K, 1)
                 K[k, j], K[k, piv] = K[k, piv], K[k, j]
             end
         end
     end
     return false
 end
-function zeroSupDiagonal!(A, b, rr, c)
+@inline function zeroSupDiagonal!(A, b, rr, c)
     M, N = size(A)
     @inbounds for j = c+1:N
         Aii = A[rr, c]
         Aij = A[rr, j]
         iszero(Aij) && continue
-        r, p, q = gcdx(Aii, Aij)
-        Aiir = Aii ÷ r
-        Aijr = Aij ÷ r
-        for k = 1:M
+        if abs(Aii) == 1
+            p = sign(Aii)
+            q = 0
+            Aiir = Aii
+            Aijr = Aij
+        else
+            r, p, q = gcdx(Aii, Aij)
+            Aiir = Aii ÷ r
+            Aijr = Aij ÷ r
+        end
+        @vp for k = 1:M
             Ack = A[k, c]
             Ajk = A[k, j]
             A[k, c] = p * Ack + q * Ajk
             A[k, j] = Aiir * Ajk - Aijr * Ack
         end
         if b !== nothing
-            for k in axes(b, 1)
+            @vp for k in axes(b, 1)
                 bc, bj = b[k, c], b[k, j]
                 b[k, c] = p * bc + q * bj
                 b[k, j] = bj * Aiir - bc * Aijr
@@ -136,22 +151,32 @@ function zeroSupDiagonal!(A, b, rr, c)
         end
     end
 end
-function zeroSubDiagonal!(A, b, rr, c)
+@inline function zeroSubDiagonal!(A, b, rr, c)
     N = size(A, 1)
     @inbounds for j = 1:c-1
         Aic = A[rr, c]
         Aij = A[rr, j]
         iszero(Aij) && continue
-        g = gcd(Aic, Aij)
-        Aicr = Aic ÷ g
-        Aijr = Aij ÷ g
-        for k = 1:N
+        # if abs(Aic) == 1
+        #     Aicr = Aic
+        #     Aijr = Aij
+        # else
+            g = gcd(Aic, Aij)
+            # if g == 1
+            #     Aicr = Aic
+            #     Aijr = Aij
+            # else
+                Aicr = Base.sdiv_int(Aic, g)
+                Aijr = Base.sdiv_int(Aij, g)
+            # end
+        # end
+        @vp for k = 1:N
             Ack = A[k, c] * Aijr
             Ajk = A[k, j] * Aicr
             A[k, j] = Ajk - Ack
         end
         if b !== nothing
-            for k in axes(b, 1)
+            @vp for k in axes(b, 1)
                 Ack = b[k, c] * Aijr
                 Ajk = b[k, j] * Aicr
                 b[k, j] = Ajk - Ack
@@ -159,7 +184,7 @@ function zeroSubDiagonal!(A, b, rr, c)
         end
     end
 end
-function simplify!(E, q = nothing)
+@inline function simplify!(E, q = nothing)
     M, N = size(E)
     (N == 0) && return
     dec = 0
@@ -176,12 +201,17 @@ function simplify!(E, q = nothing)
     end
 end
 nullspace(A) = nullspace!(copy(A))
-function nullspace!(B)
-    M = size(B, 2)
-    C = Matrix{Int}(undef, M, M)
-    @inbounds for mc = 1:M, mr = 1:M
-        C[mr, mc] = mc == mr
+@inline function identity!(C)
+    @inbounds @vp for i in eachindex(C)
+        C[i] = 0
     end
+    @inbounds @vp for i = 1:size(C, 1)
+        C[i, i] = 1
+    end
+end
+function nullspace!(B, C = Matrix{Int}(undef, size(B, 2), size(B, 2)))
+    M = size(B, 2)
+    identity!(C)
     simplify!(B, C)
     Mnew = M
     while (Mnew > 0) && (all(iszero, view(B, :, Mnew)))
