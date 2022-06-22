@@ -127,26 +127,35 @@ end
         Aij = A[rr, j]
         iszero(Aij) && continue
         if abs(Aii) == 1
-            p = sign(Aii)
-            q = 0
-            Aiir = Aii
-            Aijr = Aij
+            @vp for k = 1:M
+                Ack = A[k, c]
+                Ajk = A[k, j]
+                A[k, c] = Aii * Ack
+                A[k, j] = Aii * Ajk - Aij * Ack
+            end
+            if b !== nothing
+                @vp for k in axes(b, 1)
+                    bc, bj = b[k, c], b[k, j]
+                    b[k, c] = Aii * bc
+                    b[k, j] = Aii * bj  - Aij * bc
+                end
+            end
         else
             r, p, q = gcdx(Aii, Aij)
-            Aiir = Aii ÷ r
-            Aijr = Aij ÷ r
-        end
-        @vp for k = 1:M
-            Ack = A[k, c]
-            Ajk = A[k, j]
-            A[k, c] = p * Ack + q * Ajk
-            A[k, j] = Aiir * Ajk - Aijr * Ack
-        end
-        if b !== nothing
-            @vp for k in axes(b, 1)
-                bc, bj = b[k, c], b[k, j]
-                b[k, c] = p * bc + q * bj
-                b[k, j] = bj * Aiir - bc * Aijr
+            Aiir = Base.sdiv_int(Aii, r)
+            Aijr = Base.sdiv_int(Aij, r)
+            @vp for k = 1:M
+                Ack = A[k, c]
+                Ajk = A[k, j]
+                A[k, c] = p * Ack + q * Ajk
+                A[k, j] = Aiir * Ajk - Aijr * Ack
+            end
+            if b !== nothing
+                @vp for k in axes(b, 1)
+                    bc, bj = b[k, c], b[k, j]
+                    b[k, c] = p * bc + q * bj
+                    b[k, j] = bj * Aiir - bc * Aijr
+                end
             end
         end
     end
@@ -157,19 +166,9 @@ end
         Aic = A[rr, c]
         Aij = A[rr, j]
         iszero(Aij) && continue
-        # if abs(Aic) == 1
-        #     Aicr = Aic
-        #     Aijr = Aij
-        # else
-            g = gcd(Aic, Aij)
-            # if g == 1
-            #     Aicr = Aic
-            #     Aijr = Aij
-            # else
-                Aicr = Base.sdiv_int(Aic, g)
-                Aijr = Base.sdiv_int(Aij, g)
-            # end
-        # end
+        g = gcd(Aic, Aij)
+        Aicr = Base.sdiv_int(Aic, g)
+        Aijr = Base.sdiv_int(Aij, g)
         @vp for k = 1:N
             Ack = A[k, c] * Aijr
             Ajk = A[k, j] * Aicr
@@ -209,16 +208,29 @@ nullspace(A) = nullspace!(copy(A))
         C[i, i] = 1
     end
 end
+@inline function _allZero(x)
+    @inbounds for i in eachindex(x)
+        x[i] == 0 || return false
+    end
+    return true
+end
 function nullspace!(B, C = Matrix{Int}(undef, size(B, 2), size(B, 2)))
     M = size(B, 2)
     identity!(C)
     simplify!(B, C)
     Mnew = M
-    while (Mnew > 0) && (all(iszero, view(B, :, Mnew)))
+    while (Mnew > 0) && _allZero(@inbounds(view(B, :, Mnew)))
         Mnew -= 1
     end
-    view(C, :, Mnew+1:lastindex(C, 1))
+    @inbounds(view(C, :, Mnew+1:lastindex(C, 1)))
 end
 
+
+function smith!(A)
+    H, U = hnf!(A)
+    D, L = hnf!(H')
+    L', D, U
+end
+smith(A) = smith!(copy(A))
 
 end
