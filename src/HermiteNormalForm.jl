@@ -35,51 +35,92 @@ function ishnf(A)
     return true
 end
 
-struct ElementaryUnimodularReduction{I<:Integer}
+struct ElementaryReduction{isuni, I<:Integer}
     j::I
     k::I
+    ElementaryReduction{isuni}(j::I, k::I) where {isuni, I<:Integer} = new{isuni, I}(j, k)
 end
 
 # zero out [j, k] using column j with pivot (j, j)
-Base.:*(A::AbstractMatrix, e::ElementaryUnimodularReduction) = rmul!(copy(A), e)
-function LinearAlgebra.rmul!(A::AbstractMatrix, e::ElementaryUnimodularReduction, B = nothing)
+Base.:*(A::AbstractMatrix, e::ElementaryReduction) = rmul!(copy(A), e)
+function LinearAlgebra.rmul!(A::AbstractMatrix, e::ElementaryReduction{isuni}, B = nothing) where isuni
     k = e.j
     j = e.k
     Akj = A[k, j]
     Akk = A[k, k]
-    d, p, q = gcdx(Akk, Akj)
-    c, s = div(Akj, d), div(Akk, d)
+    if isuni
+        d, p, q = gcdx(Akk, Akj)
+        c, s = div(Akj, d), div(Akk, d)
+    else
+        c, s = Akj, Akk
+    end
     for i = axes(A, 1)
         Aik, Aij = A[i, k], A[i, j]
-        A[i, k] = Aik * p + Aij * q
+        if isuni
+            A[i, k] = Aik * p + Aij * q
+        end
         A[i, j] = -Aik * c + Aij * s
     end
     B === nothing || for i = axes(B, 1)
         Bik, Bij = B[i, k], B[i, j]
-        B[i, k] = Bik * p + Bij * q
+        if isuni
+            B[i, k] = Bik * p + Bij * q
+        end
         B[i, j] = -Bik * c + Bij * s
     end
     A
 end
 
 # zero out [j, k] using row k with pivot (k, k)
-Base.:*(e::ElementaryUnimodularReduction, A::AbstractMatrix) = lmul!(e, copy(A))
-function LinearAlgebra.lmul!(e::ElementaryUnimodularReduction, A::AbstractMatrix, B = nothing)
+Base.:*(e::ElementaryReduction, A::AbstractMatrix) = lmul!(e, copy(A))
+function LinearAlgebra.lmul!(e::ElementaryReduction{isuni}, A::AbstractMatrix, B = nothing) where isuni
     j = e.j
     k = e.k
     Ajk = A[j, k]
     Akk = A[k, k]
-    d, p, q = gcdx(Akk, Ajk)
-    c, s = div(Ajk, d), div(Akk, d)
+    if isuni
+        d, p, q = gcdx(Akk, Ajk)
+        c, s = div(Ajk, d), div(Akk, d)
+    else
+        c, s = Ajk, Akk
+    end
     for i = axes(A, 2)
         Aki, Aji = A[k, i], A[j, i]
-        A[k, i] = Aki * p + Aji * q
-        A[j, i] = -Aki * c + Aji * s
+        if isuni
+            A[k, i] = Aki * p + Aji * q
+        end
+        A[j, i] = Aji * s - Aki * c
     end
     B === nothing || for i = axes(B, 2)
         Bki, Bji = B[k, i], B[j, i]
-        B[k, i] = Bki * p + Bji * q
+        if isuni
+            B[k, i] = Bki * p + Bji * q
+        end
         B[j, i] = -Bki * c + Bji * s
+    end
+    A
+end
+
+function modified_bareiss!(A)
+    Base.require_one_based_indexing(A)
+    m, n = size(A)
+    minmn = min(m, n)
+    prevs = zeros(eltype(A), min(m - 1, 0))
+    for i in 1:m
+        for j in 1:min(i-1, n)
+            lmul!(ElementaryReduction{false}(i, j), A)
+            if j >= 2
+                idx = j - 1
+                for k in j+1:n
+                    Aik, r = divrem(A[i, k], prevs[idx])
+                    @assert iszero(r)
+                    A[i, k] = Aik
+                end
+            end
+        end
+        (i >= 2 && i < minmn) || continue
+        prev = A[i-1, i-1]
+        push!(prevs, prev)
     end
     A
 end
@@ -404,7 +445,5 @@ function orthogonalize!(O::AbstractMatrix{T}) where {T<:Integer}
     O
 end
 orthogonalnullbasis2(A) = orthogonalize!(nullspace2(A))
-
-
 
 end
