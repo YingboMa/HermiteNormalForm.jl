@@ -35,6 +35,55 @@ function ishnf(A)
     return true
 end
 
+struct ElementaryUnimodularReduction{I<:Integer}
+    j::I
+    k::I
+end
+
+# zero out [j, k] using column j with pivot (j, j)
+Base.:*(A::AbstractMatrix, e::ElementaryUnimodularReduction) = rmul!(copy(A), e)
+function LinearAlgebra.rmul!(A::AbstractMatrix, e::ElementaryUnimodularReduction, B = nothing)
+    k = e.j
+    j = e.k
+    Akj = A[k, j]
+    Akk = A[k, k]
+    d, p, q = gcdx(Akk, Akj)
+    c, s = div(Akj, d), div(Akk, d)
+    for i = axes(A, 1)
+        Aik, Aij = A[i, k], A[i, j]
+        A[i, k] = Aik * p + Aij * q
+        A[i, j] = -Aik * c + Aij * s
+    end
+    B === nothing || for i = axes(B, 1)
+        Bik, Bij = B[i, k], B[i, j]
+        B[i, k] = Bik * p + Bij * q
+        B[i, j] = -Bik * c + Bij * s
+    end
+    A
+end
+
+# zero out [j, k] using row k with pivot (k, k)
+Base.:*(e::ElementaryUnimodularReduction, A::AbstractMatrix) = lmul!(e, copy(A))
+function LinearAlgebra.lmul!(e::ElementaryUnimodularReduction, A::AbstractMatrix, B = nothing)
+    j = e.j
+    k = e.k
+    Ajk = A[j, k]
+    Akk = A[k, k]
+    d, p, q = gcdx(Akk, Ajk)
+    c, s = div(Ajk, d), div(Akk, d)
+    for i = axes(A, 2)
+        Aki, Aji = A[k, i], A[j, i]
+        A[k, i] = Aki * p + Aji * q
+        A[j, i] = -Aki * c + Aji * s
+    end
+    B === nothing || for i = axes(B, 2)
+        Bki, Bji = B[k, i], B[j, i]
+        B[k, i] = Bki * p + Bji * q
+        B[j, i] = -Bki * c + Bji * s
+    end
+    A
+end
+
 """
     H, U, rank = hnf(A)
 
@@ -50,6 +99,12 @@ function nullspace(A)
     U = Matrix{eltype(A)}(I, n, n)
     H, U, rank = _hnf_like!(copy(A), U, Val(true))
     @view U[:, findall(iszero, eachcol(H))]
+end
+
+function simplify_linearsys(A)
+    A = copy(A)
+    _hnf_like!(A, Matrix{eltype(A)}(I, size(A, 2), size(A, 2)), Val(true))
+    A
 end
 
 Base.@propagate_inbounds function find_pivot(A, k, zz = zero(eltype(A)))
@@ -106,6 +161,15 @@ function _hnf_like!(
         # Zero out A[k, k+1:n] === A22[1, 2:end] by multiplying
         # [p  -A[k, j]/d]
         # [q   A[k, k]/d]
+        # E.g.
+        # [A[:, k] A[:, j]] [p  -A[k, j]/d] = [p * A[:, k] + q * A[:, j]   -A[k, j]/d * A[:, k] + A[k, k]/d * A[:, j]]
+        #                   [q   A[k, k]/d]
+        #
+        # [p                   q] [A[k, :]  = [p * A[k, :] + q * A[j, :]
+        # [-A[j, k]/d  A[k, k]/d]  A[j, :]]  -A[j, k]/d * A[k, :] + A[k, k]/d * A[j, :]]
+        # A x = 0
+        # U A x = U 0 = 0
+        # H x = 0
         for j = k+1:n
             Akk, Akj = A[ki, k], A[ki, j]
             d, p, q = gcdx(Akk, Akj)
@@ -195,14 +259,14 @@ end
         Aij = A[rr, j]
         iszero(Aij) && continue
         if abs(Aii) == 1
-            @vp for k = 1:M
+            for k = 1:M
                 Ack = A[k, c]
                 Ajk = A[k, j]
                 A[k, c] = Aii * Ack
                 A[k, j] = Aii * Ajk - Aij * Ack
             end
             if b !== nothing
-                @vp for k in axes(b, 1)
+                for k in axes(b, 1)
                     bc, bj = b[k, c], b[k, j]
                     b[k, c] = Aii * bc
                     b[k, j] = Aii * bj - Aij * bc
@@ -210,16 +274,18 @@ end
             end
         else
             r, p, q = gcdx(Aii, Aij)
-            Aiir = Base.sdiv_int(Aii, r)
-            Aijr = Base.sdiv_int(Aij, r)
-            @vp for k = 1:M
+            #Aiir = Base.sdiv_int(Aii, r)
+            #Aijr = Base.sdiv_int(Aij, r)
+            Aiir = Base.div(Aii, r)
+            Aijr = Base.div(Aij, r)
+            for k = 1:M
                 Ack = A[k, c]
                 Ajk = A[k, j]
                 A[k, c] = p * Ack + q * Ajk
                 A[k, j] = Aiir * Ajk - Aijr * Ack
             end
             if b !== nothing
-                @vp for k in axes(b, 1)
+                for k in axes(b, 1)
                     bc, bj = b[k, c], b[k, j]
                     b[k, c] = p * bc + q * bj
                     b[k, j] = bj * Aiir - bc * Aijr
@@ -235,15 +301,15 @@ end
         Aij = A[rr, j]
         iszero(Aij) && continue
         g = gcd(Aic, Aij)
-        Aicr = Base.sdiv_int(Aic, g)
-        Aijr = Base.sdiv_int(Aij, g)
-        @vp for k = 1:N
+        Aicr = Base.div(Aic, g)
+        Aijr = Base.div(Aij, g)
+        for k = 1:N
             Ack = A[k, c] * Aijr
             Ajk = A[k, j] * Aicr
             A[k, j] = Ajk - Ack
         end
         if b !== nothing
-            @vp for k in axes(b, 1)
+            for k in axes(b, 1)
                 Ack = b[k, c] * Aijr
                 Ajk = b[k, j] * Aicr
                 b[k, j] = Ajk - Ack
@@ -266,6 +332,7 @@ end
         zeroSupDiagonal!(E, q, m, m - dec)
         zeroSubDiagonal!(E, q, m, m - dec)
     end
+    E
 end
 nullspace2(A) = nullspace2!(copy(A))
 @inline function identity!(C)
